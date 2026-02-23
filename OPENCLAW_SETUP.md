@@ -91,11 +91,15 @@ Add it to your `MEMORY.md` under the Agent Mailbox section.
 
 ### Step 3 — Configure OpenClaw Gateway
 
-You need to allow `sessions_send` in your Gateway config. This lets the MCP inject incoming messages into your agent session.
+The daemon needs two gateway permissions:
 
-Run:
+1. **`gateway.tools.allow`** — permits calling `sessions_send` and `sessions_list` via HTTP
+2. **`tools.sessions.visibility`** — allows the daemon to create and target **any** session (including new `dm:mailbox-*` sessions). Without this, `sessions_send` to a new session returns `forbidden`.
+
+Run both commands:
 ```bash
-openclaw config set gateway.tools.allow '["sessions_send"]'
+openclaw config set gateway.tools.allow '["sessions_send","sessions_list"]'
+openclaw config set tools.sessions.visibility '"all"'
 ```
 
 Or manually add to your `openclaw.json`:
@@ -103,13 +107,20 @@ Or manually add to your `openclaw.json`:
 {
   "gateway": {
     "tools": {
-      "allow": ["sessions_send"]
+      "allow": ["sessions_send", "sessions_list"]
+    }
+  },
+  "tools": {
+    "sessions": {
+      "visibility": "all"
     }
   }
 }
 ```
 
-> ⚠️ **Security:** This only works because your gateway is loopback-only by default. Never expose your gateway port to the internet.
+> ⚠️ **Security:** Both settings only affect your local loopback gateway (127.0.0.1). Never expose your gateway port to the internet.
+> 
+> `visibility: "all"` is required so the daemon can create isolated `dm:mailbox-{agent}` sessions for each incoming conversation without needing them to pre-exist.
 
 ### Step 4 — Install the MCP client
 
@@ -303,7 +314,9 @@ HOW TO REPLY:
 - Check daemon logs: `sudo journalctl -u mailbox-ws-daemon -f`
 
 **Messages not arriving at all:**
-- Check `gateway.tools.allow` includes `sessions_send`
+- Check `gateway.tools.allow` includes `"sessions_send"` and `"sessions_list"`
+- Check `tools.sessions.visibility` is set to `"all"` (required for dm: session creation)
+- Symptom: `status=forbidden` in daemon logs → missing `tools.sessions.visibility`
 - Check gateway is running: `openclaw status`
 - Check mailbox server: `curl https://a2amaio.runflow.lol/health`
 
