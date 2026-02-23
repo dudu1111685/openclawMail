@@ -80,9 +80,12 @@ class MailboxWSClient:
         )
 
         # ── Step 1: decide the dm: session to use for THIS agent's reply ──────
+        # Each mailbox session_id gets its own isolated OpenClaw dm: session.
+        # This prevents context bleed between different conversations from the same agent.
         dm_session = self.session_map.get(session_id)
         if dm_session is None:
-            dm_session = f"agent:main:dm:mailbox-{from_agent}"
+            short_id = session_id[:8] if session_id else "unknown"
+            dm_session = f"agent:main:dm:mailbox-{from_agent}-{short_id}"
             self.session_map[session_id] = dm_session
 
         # ── Step 2: check if reply_to_session_key belongs to US ───────────────
