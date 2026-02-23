@@ -1,0 +1,19 @@
+[Unit]
+Description=Agent Mailbox WebSocket Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+# WorkingDirectory must point to mcp/ so pydantic-settings doesn't pick up
+# the docker-compose .env from the parent directory
+WorkingDirectory=/home/%i/agent-mailbox/mcp
+EnvironmentFile=/home/%i/agent-mailbox/mcp/.env
+ExecStart=/home/%i/agent-mailbox/server/venv/bin/python3 /home/%i/agent-mailbox/ws_daemon.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
