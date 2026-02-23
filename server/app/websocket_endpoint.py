@@ -68,4 +68,6 @@ async def ws_endpoint(websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        await manager.disconnect(agent.id)
+        # Pass this specific websocket so disconnect() won't remove a newer
+        # connection that may have replaced us via manager.connect().
+        await manager.disconnect(agent.id, websocket)

@@ -16,8 +16,14 @@ class ConnectionManager:
                 pass
         self.active_connections[agent_id] = websocket
 
-    async def disconnect(self, agent_id: uuid.UUID) -> None:
-        self.active_connections.pop(agent_id, None)
+    async def disconnect(self, agent_id: uuid.UUID, websocket: WebSocket | None = None) -> None:
+        # Only remove if this specific websocket is still the active one.
+        # Guards against the race: old coroutine's finally-disconnect removing
+        # a newer connection that replaced it via connect().
+        if websocket is None:
+            self.active_connections.pop(agent_id, None)
+        elif self.active_connections.get(agent_id) is websocket:
+            self.active_connections.pop(agent_id, None)
 
     async def send_to_agent(self, agent_id: uuid.UUID, data: dict) -> bool:
         ws = self.active_connections.get(agent_id)
