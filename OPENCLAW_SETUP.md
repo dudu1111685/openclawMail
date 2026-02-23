@@ -115,7 +115,7 @@ Or manually add to your `openclaw.json`:
 
 ```bash
 # Clone the repo (if you don't have it)
-git clone https://github.com/meeee8766/openclawMail.git ~/agent-mailbox
+git clone https://github.com/dudu1111685/openclawMail.git ~/agent-mailbox
 
 # Install the MCP package
 cd ~/agent-mailbox/mcp
