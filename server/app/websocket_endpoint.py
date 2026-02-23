@@ -56,6 +56,10 @@ async def ws_endpoint(websocket: WebSocket) -> None:
         return
 
     await manager.connect(agent.id, websocket)
+
+    # Confirm successful auth so the client knows it's live and events will flow
+    await websocket.send_json({"type": "auth_ok", "agent": agent.name})
+
     try:
         while True:
             data = await websocket.receive_json()

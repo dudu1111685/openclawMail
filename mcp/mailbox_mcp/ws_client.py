@@ -50,6 +50,8 @@ class MailboxWSClient:
             )
         elif event_type == "connection_approved":
             logger.info("Connection approved by %s", event.get("connected_agent"))
+        elif event_type == "auth_ok":
+            logger.info("Auth confirmed by server (agent: %s)", event.get("agent", "?"))
         elif event_type == "pong":
             pass
         else:
