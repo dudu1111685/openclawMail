@@ -76,18 +76,18 @@ class MailboxWSClient:
         content = event.get("content", "")
         subject = event.get("subject", "").replace("\n", " ").replace("\r", "")
 
-        # reply_to_session_key: if the sender specified a session key,
-        # inject into THAT session (e.g. their Telegram topic) instead of dm:mailbox.
-        # This routes the reply back to wherever the sender initiated the conversation.
+        # reply_to_session_key: a session key on the SENDER's machine.
+        # It means: "when you reply, include this key so my daemon injects
+        # your reply into this specific session on MY side."
+        # We do NOT use it as injection target here (it belongs to the sender's machine).
+        # Instead, we pass it in the HOW TO REPLY instructions so our agent can include it.
         reply_to_session_key = event.get("reply_to_session_key") or None
 
-        # Determine injection target session
+        # Injection target: always our own local session.
+        # reply_to_session_key is used by the SENDER's daemon (when they receive our reply).
         session_key = self.session_map.get(session_id)
         if session_key is None:
-            if reply_to_session_key:
-                session_key = reply_to_session_key
-            else:
-                session_key = f"agent:main:dm:mailbox-{from_agent}"
+            session_key = f"agent:main:dm:mailbox-{from_agent}"
             self.session_map[session_id] = session_key
 
         trust_level = self._get_trust_level(from_agent)
