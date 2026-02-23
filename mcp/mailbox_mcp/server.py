@@ -69,7 +69,15 @@ def create_server() -> Server:
                         },
                         "session_id": {
                             "type": "string",
-                            "description": "Optional existing session ID to continue",
+                            "description": "Optional existing session ID to continue a thread",
+                        },
+                        "reply_to_session_key": {
+                            "type": "string",
+                            "description": "Optional OpenClaw session key on YOUR side. "
+                                           "When set, the recipient's replies will be injected "
+                                           "into that specific session (e.g. your current Telegram topic) "
+                                           "instead of their default dm:mailbox-{you} session. "
+                                           "Use this when you want the conversation to stay in context.",
                         },
                     },
                     "required": ["to", "content"],
@@ -176,6 +184,7 @@ async def _handle_send(arguments: dict) -> list[TextContent]:
         subject=arguments.get("subject"),
         content=arguments["content"],
         session_id=arguments.get("session_id"),
+        reply_to_session_key=arguments.get("reply_to_session_key"),
     )
     text = (
         f"Message sent!\n"

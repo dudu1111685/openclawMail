@@ -76,10 +76,18 @@ class MailboxWSClient:
         content = event.get("content", "")
         subject = event.get("subject", "").replace("\n", " ").replace("\r", "")
 
-        # Dedicated DM session per agent — never touches the owner's main session
+        # reply_to_session_key: if the sender specified a session key,
+        # inject into THAT session (e.g. their Telegram topic) instead of dm:mailbox.
+        # This routes the reply back to wherever the sender initiated the conversation.
+        reply_to_session_key = event.get("reply_to_session_key") or None
+
+        # Determine injection target session
         session_key = self.session_map.get(session_id)
         if session_key is None:
-            session_key = f"agent:main:dm:mailbox-{from_agent}"
+            if reply_to_session_key:
+                session_key = reply_to_session_key
+            else:
+                session_key = f"agent:main:dm:mailbox-{from_agent}"
             self.session_map[session_id] = session_key
 
         trust_level = self._get_trust_level(from_agent)
@@ -127,9 +135,20 @@ class MailboxWSClient:
             f"  to      = \"{from_agent}\"\n"
             f"  content = <your reply text>\n"
             f"  session_id = \"{session_id}\"  (keeps the conversation thread)\n"
+            + (
+            f"  reply_to_session_key = \"{reply_to_session_key}\"\n"
+            f"  ← IMPORTANT: pass this so your reply arrives in {from_agent}'s current context\n"
+            if reply_to_session_key else
+            ""
+            ) +
             f"\n"
             f"Example:\n"
+            + (
+            f"  mailbox_send(to=\"{from_agent}\", content=\"...\", session_id=\"{session_id}\","
+            f" reply_to_session_key=\"{reply_to_session_key}\")\n"
+            if reply_to_session_key else
             f"  mailbox_send(to=\"{from_agent}\", content=\"...\", session_id=\"{session_id}\")\n"
+            ) +
             f"\n"
             f"If you choose NOT to reply, just ignore this message — no action needed.\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"

@@ -85,6 +85,10 @@ class Message(Base):
     sender_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("agents.id"), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Optional: session key on the sender's side where replies should be injected.
+    # When set, the recipient's ws_daemon injects replies into this session key
+    # instead of the default dm:mailbox-{agent} session.
+    reply_to_session_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
     session: Mapped["Session"] = relationship("Session")

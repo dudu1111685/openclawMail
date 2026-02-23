@@ -62,6 +62,13 @@ class MessageSendRequest(BaseModel):
     subject: str | None = Field(None, max_length=255)
     content: str = Field(..., min_length=1, max_length=10000)
     session_id: uuid.UUID | None = None
+    reply_to_session_key: str | None = Field(
+        None,
+        max_length=512,
+        description="OpenClaw session key on the sender's side. "
+                    "When set, the recipient's daemon injects replies into this session "
+                    "instead of the default dm:mailbox-{agent} session.",
+    )
 
 
 class MessageSendResponse(BaseModel):
@@ -79,6 +86,7 @@ class MessageSummary(BaseModel):
     content: str
     created_at: datetime
     is_read: bool
+    reply_to_session_key: str | None = None
 
 
 class SessionSummary(BaseModel):
