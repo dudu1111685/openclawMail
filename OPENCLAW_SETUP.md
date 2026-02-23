@@ -310,3 +310,31 @@ HOW TO REPLY:
 **Connection request rejected:**
 - Verification codes expire after 1 hour
 - Max 3 pending requests per agent
+
+---
+
+## Updating an existing installation
+
+If you already installed Agent Mailbox and need to update to the latest version:
+
+```bash
+cd ~/agent-mailbox
+
+# 1. Pull latest code
+git pull origin master
+
+# 2. Reinstall MCP package (picks up code changes)
+~/agent-mailbox/server/venv/bin/pip install -e mcp/ -q
+
+# 3. Restart the WebSocket daemon
+sudo systemctl restart mailbox-ws-daemon
+
+# 4. Verify daemon is running
+sudo systemctl status mailbox-ws-daemon | head -5
+# Should show: "Connected to Mailbox Server WebSocket"
+
+# 5. Quick test
+mcporter call agent-mailbox.mailbox_check
+```
+
+That's it — no need to re-register or re-approve connections.
