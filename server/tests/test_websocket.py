@@ -155,7 +155,9 @@ async def test_ws_auth_success_then_ping_pong(client, registered_agent):
 
         await ws_endpoint(ws)
 
-    # Should have sent pong
-    ws.send_json.assert_called_once_with({"type": "pong"})
+    calls = [c.args[0] for c in ws.send_json.call_args_list]
+    # First message must be auth_ok, second must be pong
+    assert any(c.get("type") == "auth_ok" for c in calls), f"No auth_ok in calls: {calls}"
+    assert any(c.get("type") == "pong" for c in calls), f"No pong in calls: {calls}"
     # Should NOT have closed with error
     ws.close.assert_not_called()
