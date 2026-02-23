@@ -22,8 +22,11 @@ class MailboxWSClient:
         mailbox_client: MailboxClient,
         openclaw_client: OpenClawClient,
     ) -> None:
-        ws_scheme = "wss" if settings.use_tls else "ws"
-        self.ws_url = f"{ws_scheme}://{settings.mailbox_server_url}/ws"
+        url = settings.mailbox_server_url
+        if not url.startswith(("http://", "https://")):
+            url = f"https://{url}"
+        # Convert http(s) → ws(s)
+        self.ws_url = url.replace("https://", "wss://").replace("http://", "ws://").rstrip("/") + "/ws"
         self.mailbox = mailbox_client
         self.openclaw = openclaw_client
         self.session_map: dict[str, str] = {}  # mailbox_session_id -> openclaw_session_key
