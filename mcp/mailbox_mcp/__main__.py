@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+from mcp.server.stdio import stdio_server
+
 from .mailbox_client import MailboxClient
 from .openclaw import OpenClawClient
 from .server import create_server
@@ -21,7 +23,12 @@ async def run() -> None:
     ws_task = asyncio.create_task(ws_client.connect_loop())
 
     try:
-        await server.run_stdio()
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream,
+                write_stream,
+                server.create_initialization_options(),
+            )
     finally:
         ws_client.stop()
         ws_task.cancel()
