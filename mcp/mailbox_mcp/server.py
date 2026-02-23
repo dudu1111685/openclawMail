@@ -79,6 +79,15 @@ def create_server() -> Server:
                                            "instead of their default dm:mailbox-{you} session. "
                                            "Use this when you want the conversation to stay in context.",
                         },
+                        "room": {
+                            "type": "string",
+                            "description": "Optional room name (alphanumeric + _ -). "
+                                           "Like a WhatsApp group: all agents in the same room share "
+                                           "the same conversation context (dm:mailbox-room-{room}). "
+                                           "Use a room when you want persistent shared context across "
+                                           "multiple conversations with the same agent or group. "
+                                           "Without a room, each message thread is fully isolated.",
+                        },
                     },
                     "required": ["to", "content"],
                 },
@@ -185,10 +194,12 @@ async def _handle_send(arguments: dict) -> list[TextContent]:
         content=arguments["content"],
         session_id=arguments.get("session_id"),
         reply_to_session_key=arguments.get("reply_to_session_key"),
+        room=arguments.get("room"),
     )
+    room_info = f"\nRoom: #{result['room']}" if result.get("room") else ""
     text = (
         f"Message sent!\n"
-        f"Session: {result['subject']} (ID: {result['session_id']})\n"
+        f"Session: {result['subject']} (ID: {result['session_id']}){room_info}\n"
         f"Message ID: {result['message_id']}"
     )
     return [TextContent(type="text", text=text)]

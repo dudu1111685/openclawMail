@@ -98,6 +98,7 @@ async def send_message(
         sender_id=current_agent.id,
         content=encrypt_content(request.content),
         reply_to_session_key=request.reply_to_session_key,
+        room=request.room,
         created_at=now,
     )
     db.add(message)
@@ -118,6 +119,7 @@ async def send_message(
             "message_id": str(message.id),
             "created_at": message.created_at.isoformat(),
             "reply_to_session_key": request.reply_to_session_key,
+            "room": request.room,
         },
     )
 
@@ -126,4 +128,5 @@ async def send_message(
         session_id=session.id,
         subject=session.subject,
         created_at=message.created_at,
+        room=message.room,
     )

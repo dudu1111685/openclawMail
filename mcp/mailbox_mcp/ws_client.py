@@ -74,18 +74,31 @@ class MailboxWSClient:
         # the reply should land.  It is a session key on the *sender's* gateway.
         reply_to_session_key = event.get("reply_to_session_key") or None
 
+        # room: optional shared context name (WhatsApp-group style)
+        room = event.get("room") or None
+        if room:
+            room = re.sub(r"[^\w\-]", "", room).strip() or None
+
         logger.info(
-            "Incoming message | from=%s | session=%s | reply_to_session_key=%s",
-            from_agent, session_id, reply_to_session_key or "(none)",
+            "Incoming message | from=%s | session=%s | room=%s | reply_to_session_key=%s",
+            from_agent, session_id, room or "(none)", reply_to_session_key or "(none)",
         )
 
         # ── Step 1: decide the dm: session to use for THIS agent's reply ──────
-        # Each mailbox session_id gets its own isolated OpenClaw dm: session.
-        # This prevents context bleed between different conversations from the same agent.
+        #
+        # Routing priority:
+        #   1. room set   → dm:mailbox-room-{room}  (shared context, all participants)
+        #   2. no room    → dm:mailbox-{from_agent}-{session_id[:8]}  (isolated per-session)
+        #
+        # The room model works like WhatsApp groups: same "people", different contexts.
+        # Sender decides which room to write to (or opens a new one).
         dm_session = self.session_map.get(session_id)
         if dm_session is None:
-            short_id = session_id[:8] if session_id else "unknown"
-            dm_session = f"agent:main:dm:mailbox-{from_agent}-{short_id}"
+            if room:
+                dm_session = f"agent:main:dm:mailbox-room-{room}"
+            else:
+                short_id = session_id[:8] if session_id else "unknown"
+                dm_session = f"agent:main:dm:mailbox-{from_agent}-{short_id}"
             self.session_map[session_id] = dm_session
 
         # ── Step 2: check if reply_to_session_key belongs to US ───────────────
@@ -103,7 +116,7 @@ class MailboxWSClient:
                 return  # ← stop here — no reply sent back to sender
 
         # ── Step 3: inject into dm: session, wait for agent reply ─────────────
-        formatted = self._format_incoming(from_agent, subject, content, session_id)
+        formatted = self._format_incoming(from_agent, subject, content, session_id, room=room)
 
         logger.info(
             "Injecting into %s (timeout=%ds)…", dm_session, DM_SESSION_TIMEOUT
@@ -151,6 +164,7 @@ class MailboxWSClient:
         subject: str,
         content: str,
         session_id: str,
+        room: str | None = None,
     ) -> str:
         """
         Format the message injected into the dm: session.
@@ -162,12 +176,15 @@ class MailboxWSClient:
         nonce = secrets.token_hex(8)
         boundary = f"AGENT_MSG_{nonce}"
 
+        room_line = f"Room    : #{room}\n" if room else ""
+
         return (
             f"[AGENT MAILBOX — INCOMING MESSAGE]\n"
             f"\n"
             f"You received a message from another AI agent.\n"
             f"From    : \"{from_agent}\" ({trust_label})\n"
             f"Subject : {subject or '(none)'}\n"
+            f"{room_line}"
             f"Thread  : {session_id}\n"
             f"\n"
             f"🔒 Security rules:\n"

@@ -89,6 +89,7 @@ class MailboxClient:
         subject: str | None = None,
         session_id: str | None = None,
         reply_to_session_key: str | None = None,
+        room: str | None = None,
     ) -> dict:
         async with self._client() as client:
             payload: dict = {"to": to, "content": content}
@@ -98,6 +99,8 @@ class MailboxClient:
                 payload["session_id"] = session_id
             if reply_to_session_key:
                 payload["reply_to_session_key"] = reply_to_session_key
+            if room:
+                payload["room"] = room
             resp = await client.post(
                 f"{self.base_url}/messages/send",
                 json=payload,

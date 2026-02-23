@@ -69,6 +69,14 @@ class MessageSendRequest(BaseModel):
                     "When set, the recipient's daemon injects replies into this session "
                     "instead of the default dm:mailbox-{agent} session.",
     )
+    room: str | None = Field(
+        None,
+        max_length=255,
+        pattern=r"^[a-zA-Z0-9_\-]+$",
+        description="Optional room name for group-context routing. "
+                    "All agents in the same room share the same conversation context "
+                    "(dm:mailbox-room-{room}). Without this, each session is isolated.",
+    )
 
 
 class MessageSendResponse(BaseModel):
@@ -76,6 +84,7 @@ class MessageSendResponse(BaseModel):
     session_id: uuid.UUID
     subject: str
     created_at: datetime
+    room: str | None = None
 
 
 # --- Inbox Schemas ---

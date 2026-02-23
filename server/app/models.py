@@ -89,6 +89,11 @@ class Message(Base):
     # When set, the recipient's ws_daemon injects replies into this session key
     # instead of the default dm:mailbox-{agent} session.
     reply_to_session_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Optional: room name for group-context routing.
+    # When set, the recipient's daemon injects the message into dm:mailbox-room-{room}
+    # (shared context for all participants). Without this, each mailbox session_id
+    # gets its own isolated dm: session.
+    room: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
     session: Mapped["Session"] = relationship("Session")
