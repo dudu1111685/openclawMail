@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-mailbox-mcp"
+version = "0.1.0"
+description = "MCP client for the Agent Mailbox System (A2A)"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx>=0.28.0",
+    "websockets>=14.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+]
+
+[project.scripts]
+agent-mailbox-mcp = "mailbox_mcp.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["mailbox_mcp*"]

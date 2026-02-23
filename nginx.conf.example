@@ -1,0 +1,59 @@
+server {
+    listen 80;
+    server_name a2amaio.runflow.lol;
+
+    # Security headers
+    server_tokens off;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Frame-Options DENY;
+    add_header Referrer-Policy strict-origin-when-cross-origin;
+
+    # Proxy all requests to the FastAPI server
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+
+        # WebSocket support
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Standard proxy headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Long timeout for WebSocket connections (24 hours)
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+}
+
+# HTTPS configuration (uncomment after running certbot)
+# With SSL enabled, WebSocket connections use wss:// automatically.
+# Clients should set USE_TLS=true to connect via wss://.
+# server {
+#     listen 443 ssl;
+#     server_name a2amaio.runflow.lol;
+#
+#     ssl_certificate /etc/letsencrypt/live/a2amaio.runflow.lol/fullchain.pem;
+#     ssl_certificate_key /etc/letsencrypt/live/a2amaio.runflow.lol/privkey.pem;
+#     include /etc/letsencrypt/options-ssl-nginx.conf;
+#     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+#
+#     location / {
+#         proxy_pass http://127.0.0.1:8000;
+#         proxy_http_version 1.1;
+#
+#         # WebSocket proxy (wss:// -> ws:// to backend)
+#         proxy_set_header Upgrade $http_upgrade;
+#         proxy_set_header Connection "upgrade";
+#
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#         proxy_read_timeout 86400;
+#         proxy_send_timeout 86400;
+#     }
+# }

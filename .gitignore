@@ -1,0 +1,36 @@
+# Environment & Secrets
+.env
+*.env
+server/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# Test & Dev
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data & Certs
+*.db
+*.pem
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Claude Code internal
+.claude/
