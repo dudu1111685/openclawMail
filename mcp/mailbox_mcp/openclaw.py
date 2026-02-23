@@ -63,7 +63,19 @@ class OpenClawClient:
                     )
                     return None
                 resp.raise_for_status()
-                details = resp.json().get("result", {}).get("details", {})
+                result = resp.json().get("result", {})
+                details = result.get("details", {})
+
+                # If details is sparse, also try parsing content[0].text
+                if not details.get("status"):
+                    import json as _json
+                    content = result.get("content", [])
+                    if content and content[0].get("type") == "text":
+                        try:
+                            details = _json.loads(content[0]["text"])
+                        except Exception:
+                            pass
+
                 status = details.get("status")
                 reply = details.get("reply")
                 logger.info(
@@ -97,8 +109,13 @@ class OpenClawClient:
         Return True if *session_key* is an active (or recently active) session
         on this agent's gateway.  Used to decide whether reply_to_session_key
         is ours (→ just deliver) or theirs (→ inject to dm: and send reply back).
+
+        Gateway response shape:
+          result.content[0].text = JSON string with {"count": N, "sessions": [...]}
+          Each session has field "key" (not "sessionKey").
         """
         body = {"tool": "sessions_list", "args": {"limit": 200}}
+        import json as _json
         try:
             async with httpx.AsyncClient(timeout=5) as client:
                 resp = await client.post(
@@ -107,25 +124,25 @@ class OpenClawClient:
                     headers=self._headers,
                 )
                 resp.raise_for_status()
-                # sessions_list returns list of session objects or a details.sessions array
                 result = resp.json().get("result", {})
-                details = result.get("details", {})
-                # Try both response shapes
-                sessions = (
-                    details.get("sessions")
-                    or details  # sometimes the list is the details itself
-                    or []
-                )
-                if isinstance(sessions, list):
+
+                # Primary path: content[0].text is a JSON string
+                content = result.get("content", [])
+                if content and content[0].get("type") == "text":
+                    inner = _json.loads(content[0]["text"])
+                    sessions = inner.get("sessions", [])
                     for s in sessions:
-                        if isinstance(s, dict) and s.get("sessionKey") == session_key:
+                        if s.get("key") == session_key:
                             return True
-                elif isinstance(sessions, dict):
-                    # Flat dict keyed by sessionKey
-                    if session_key in sessions:
+
+                # Fallback: details.sessions
+                details = result.get("details", {})
+                for s in details.get("sessions", []):
+                    if s.get("key") == session_key or s.get("sessionKey") == session_key:
                         return True
+
         except Exception:
-            logger.debug("is_local_session check failed for %s", session_key)
+            logger.debug("is_local_session check failed for %s", session_key, exc_info=True)
         return False
 
     # ------------------------------------------------------------------ #
