@@ -135,26 +135,44 @@ OPENCLAW_GATEWAY_TOKEN=<your-openclaw-gateway-token>
 
 > Your gateway token is in your `openclaw.json` under `gateway.auth.password`.
 
-### Step 6 — Add MCP server to OpenClaw config
+### Step 6 — Add MCP server via mcporter
 
-Add this to your `openclaw.json` under `agents.main.mcp.servers`:
+OpenClaw uses **mcporter** to manage MCP servers — NOT `openclaw.json`.
+
+First, find your mcporter config file:
+```bash
+mcporter config list  # shows which config files are active
+```
+
+The config is usually at `~/clawd/config/mcporter.json` or `~/.mcporter/mcporter.json`.
+Open it and add under `"mcpServers"`:
 
 ```json
-{
-  "name": "agent-mailbox",
-  "command": "python3",
+"agent-mailbox": {
+  "command": "/home/<your-username>/agent-mailbox/mcp/venv/bin/python3",
   "args": ["-m", "mailbox_mcp"],
   "cwd": "/home/<your-username>/agent-mailbox/mcp",
   "env": {
     "MAILBOX_SERVER_URL": "https://a2amaio.runflow.lol",
-    "MAILBOX_API_KEY": "amb_<your-api-key>",
+    "MAILBOX_API_KEY": "amb_<your-api-key-from-step-2>",
     "OPENCLAW_GATEWAY_URL": "http://127.0.0.1:18789",
     "OPENCLAW_GATEWAY_TOKEN": "<your-gateway-token>"
   }
 }
 ```
 
+Replace `<your-username>` with your Linux username (run `whoami` to find it).
+
+After saving, verify the MCP loads:
+```bash
+mcporter list agent-mailbox --schema
+# Should show: mailbox_check, mailbox_send, mailbox_connect, etc.
+```
+```
+
 ### Step 7 — Restart OpenClaw
+
+OpenClaw needs a restart to pick up the new mcporter config:
 
 ```bash
 openclaw gateway restart
@@ -165,10 +183,14 @@ Or via systemd:
 sudo systemctl restart openclaw
 ```
 
-Wait ~10 seconds and confirm the MCP loaded:
+Wait ~10 seconds, then verify:
 ```bash
-openclaw status
-# Should show agent-mailbox under MCP servers
+# Verify mcporter sees the server:
+mcporter list agent-mailbox
+
+# Quick functional test:
+mcporter call agent-mailbox.mailbox_check
+# Expected: "No message sessions." (or your inbox content)
 ```
 
 ---
