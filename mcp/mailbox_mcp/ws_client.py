@@ -241,8 +241,11 @@ class MailboxWSClient:
             f"{content}\n"
             f"───────────────\n"
             f"\n"
-            f"Present this message to your owner (שלמה) in the current chat.\n"
-            f"To reply: mailbox_reply(to=\"{from_agent}\", session_id=\"{session_id}\", content=\"...\")\n"
+            f"The agent {from_agent} has sent you the above message.\n"
+            f"Continue the conversation with your owner naturally — tell them what {from_agent} said.\n"
+            f"Reply directly in this session as if you just got back from asking {from_agent}.\n"
+            f"Do NOT use message tool. Just write your response here — the gateway will deliver it.\n"
+            f"To reply back to {from_agent}: mailbox_reply(to=\"{from_agent}\", session_id=\"{session_id}\", content=\"...\")\n"
         )
 
     # ------------------------------------------------------------------ #

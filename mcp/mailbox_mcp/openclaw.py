@@ -181,25 +181,16 @@ class OpenClawClient:
         Does NOT send the agent's response anywhere else (breaks the loop).
         """
         logger.info("Delivering reply to owner session %s", session_key)
-        # Use timeoutSeconds=0 (fire-and-forget) — the message is formatted as a
-        # [System Message] which the gateway treats as an inbound user message,
-        # triggering a new agent turn automatically without us waiting for a reply.
-        body = {
-            "tool": "sessions_send",
-            "args": {
-                "sessionKey": session_key,
-                "message": message,
-                "timeoutSeconds": 0,
-            },
-        }
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    f"{self.gateway_url}/tools/invoke",
-                    json=body,
-                    headers=self._headers,
-                )
-                resp.raise_for_status()
-                logger.info("Delivered to owner session %s (fire-and-forget)", session_key)
-        except Exception:
-            logger.exception("deliver_to_owner_session failed for %s", session_key)
+        # Use timeout>0 so the gateway waits for the agent's reply and delivers it
+        # to the owner's channel (Telegram/WhatsApp). The agent's reply IS the
+        # delivery — gateway routes it automatically to the right channel.
+        reply = await self.inject_and_get_reply(
+            session_key=session_key,
+            message=message,
+            timeout_seconds=DELIVERY_TIMEOUT,
+        )
+        if reply:
+            logger.info(
+                "Owner session %s replied (len=%d) — delivered via gateway",
+                session_key, len(reply)
+            )
