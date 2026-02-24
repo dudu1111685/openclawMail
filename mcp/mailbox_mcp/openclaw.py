@@ -168,6 +168,48 @@ class OpenClawClient:
         return False
 
     # ------------------------------------------------------------------ #
+    #  Parse session_key → channel delivery params                         #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _parse_session_key(session_key: str) -> dict | None:
+        """
+        Parse a session key into channel delivery parameters for the message tool.
+
+        Supported formats:
+          agent:main:telegram:group:-1003847194980:topic:3957
+          agent:main:telegram:group:-1003847194980
+          agent:main:telegram:dm:123456789
+
+        Returns dict with keys: channel, target, thread_id (optional)
+        Returns None if the session key cannot be parsed into a direct-send target.
+        """
+        parts = session_key.split(":")
+        # Minimum: agent:main:<channel>
+        if len(parts) < 3:
+            return None
+
+        channel = parts[2]  # telegram, whatsapp, discord, etc.
+
+        # telegram:group:-1003847194980:topic:3957
+        if channel == "telegram":
+            # find chat_id (the negative number)
+            chat_id = None
+            thread_id = None
+            for i, p in enumerate(parts):
+                if p in ("group", "dm") and i + 1 < len(parts):
+                    chat_id = parts[i + 1]
+                if p == "topic" and i + 1 < len(parts):
+                    thread_id = parts[i + 1]
+            if chat_id:
+                result = {"channel": "telegram", "target": chat_id}
+                if thread_id:
+                    result["thread_id"] = thread_id
+                return result
+
+        return None
+
+    # ------------------------------------------------------------------ #
     #  Deliver a "reply arrived" notification to the owner's session        #
     # ------------------------------------------------------------------ #
 
@@ -177,15 +219,68 @@ class OpenClawClient:
         message: str,
     ) -> None:
         """
-        Inject *message* into the owner's active session (e.g. Telegram thread).
+        Deliver *message* directly to the owner's channel (Telegram topic etc.)
+        using the message tool — bypasses sessions_send entirely.
 
-        Uses sessions_send with timeoutSeconds=0 — true fire-and-forget:
-        - Gateway injects the message and returns immediately (no waiting for reply)
-        - No announce step → no side-effects writing to Telegram from remote gateway
-        - Delivers directly into the specific session_key (telegram topic etc.)
+        Why message tool instead of sessions_send:
+        - sessions_send always runs an A2A announce flow (even with timeoutSeconds=0)
+          which triggers an agent turn in the session → writes to Telegram as side-effect
+        - message tool sends directly to the channel with no agent turn involved
+        - Zero announce step, zero side effects, fire-and-forget
+
+        Falls back to sessions_send(timeoutSeconds=0) for non-telegram sessions.
         """
-        logger.info("Delivering reply to owner session %s (fire-and-forget)", session_key)
-        body = {
+        logger.info("Delivering reply to owner session %s via message tool", session_key)
+
+        parsed = self._parse_session_key(session_key)
+        if parsed:
+            # Direct channel delivery — no agent turn, no announce step
+            args: dict = {
+                "action": "send",
+                "channel": parsed["channel"],
+                "target": parsed["target"],
+                "message": message,
+            }
+            if "thread_id" in parsed:
+                args["threadId"] = parsed["thread_id"]
+
+            body = {"tool": "message", "args": args}
+            try:
+                async with httpx.AsyncClient(timeout=DELIVERY_HTTP_TIMEOUT) as client:
+                    resp = await client.post(
+                        f"{self.gateway_url}/tools/invoke",
+                        json=body,
+                        headers=self._headers,
+                    )
+                    resp.raise_for_status()
+                    result = resp.json()
+                    logger.info(
+                        "deliver_to_owner_session: message tool OK for %s (messageId=%s)",
+                        session_key,
+                        result.get("result", {}).get("details", {}).get("messageId"),
+                    )
+                    return
+            except httpx.TimeoutException:
+                logger.warning(
+                    "deliver_to_owner_session: message tool HTTP timeout for %s", session_key
+                )
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    "deliver_to_owner_session: message tool HTTP %s for %s: %s",
+                    e.response.status_code, session_key, e.response.text,
+                )
+            except Exception:
+                logger.exception(
+                    "deliver_to_owner_session: message tool unexpected error for %s", session_key
+                )
+            return  # don't fallback — avoid double-delivery attempts
+
+        # Fallback: non-telegram session — use sessions_send fire-and-forget
+        logger.info(
+            "deliver_to_owner_session: no channel parse for %s — falling back to sessions_send",
+            session_key,
+        )
+        body_fallback = {
             "tool": "sessions_send",
             "args": {
                 "sessionKey": session_key,
@@ -197,24 +292,14 @@ class OpenClawClient:
             async with httpx.AsyncClient(timeout=DELIVERY_HTTP_TIMEOUT) as client:
                 resp = await client.post(
                     f"{self.gateway_url}/tools/invoke",
-                    json=body,
+                    json=body_fallback,
                     headers=self._headers,
                 )
                 resp.raise_for_status()
                 logger.info(
-                    "deliver_to_owner_session: injected into %s (status=%s)",
-                    session_key, resp.status_code,
+                    "deliver_to_owner_session: sessions_send fallback OK for %s", session_key
                 )
-        except httpx.TimeoutException:
-            logger.warning(
-                "deliver_to_owner_session: HTTP timeout for session %s", session_key
-            )
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                "deliver_to_owner_session: HTTP %s for session %s: %s",
-                e.response.status_code, session_key, e.response.text,
-            )
         except Exception:
             logger.exception(
-                "deliver_to_owner_session: unexpected error for session %s", session_key
+                "deliver_to_owner_session: sessions_send fallback failed for %s", session_key
             )
