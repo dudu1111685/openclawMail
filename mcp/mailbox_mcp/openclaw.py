@@ -6,6 +6,9 @@ import httpx
 
 from .config import settings
 
+# Timeout for cron wake HTTP call (fire-and-forget, should be near-instant)
+CRON_WAKE_TIMEOUT = 5
+
 
 def _extract_reply(raw: str) -> str:
     """
@@ -30,8 +33,6 @@ logger = logging.getLogger(__name__)
 
 # Default timeout for agent turns in dm: sessions (agent needs time to think + act)
 DM_SESSION_TIMEOUT = int(getattr(settings, "agent_reply_timeout", 300))
-# Shorter timeout when delivering a reply back to the owner's active session
-DELIVERY_TIMEOUT = 60
 
 
 class OpenClawClient:
@@ -167,6 +168,50 @@ class OpenClawClient:
         return False
 
     # ------------------------------------------------------------------ #
+    #  cron wake — fire-and-forget systemEvent to the main session         #
+    # ------------------------------------------------------------------ #
+
+    async def cron_wake(self, text: str) -> bool:
+        """
+        Send a systemEvent to the main session via Gateway cron wake.
+
+        This is fire-and-forget: the gateway enqueues a systemEvent and triggers
+        an immediate heartbeat.  No announce step, no timeout, no side effects.
+
+        Returns True on success, False on any error.
+        """
+        body = {
+            "tool": "cron",
+            "args": {
+                "action": "wake",
+                "text": text,
+                "mode": "now",
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=CRON_WAKE_TIMEOUT) as client:
+                resp = await client.post(
+                    f"{self.gateway_url}/tools/invoke",
+                    json=body,
+                    headers=self._headers,
+                )
+                resp.raise_for_status()
+                result = resp.json()
+                ok = result.get("ok", False)
+                logger.info("cron_wake: ok=%s", ok)
+                return bool(ok)
+        except httpx.TimeoutException:
+            logger.warning("cron_wake: HTTP timeout after %ds", CRON_WAKE_TIMEOUT)
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "cron_wake: HTTP %s: %s",
+                e.response.status_code, e.response.text,
+            )
+        except Exception:
+            logger.exception("cron_wake: unexpected error")
+        return False
+
+    # ------------------------------------------------------------------ #
     #  Deliver a "reply arrived" notification to the owner's session        #
     # ------------------------------------------------------------------ #
 
@@ -176,21 +221,27 @@ class OpenClawClient:
         message: str,
     ) -> None:
         """
-        Inject *message* into the owner's session (e.g. Telegram thread).
-        Uses a shorter timeout — we just need to deliver, not wait for a response.
-        Does NOT send the agent's response anywhere else (breaks the loop).
+        Deliver an incoming agent message to the owner's active session.
+
+        Uses cron wake (systemEvent) instead of sessions_send, so:
+        - No announce step → no side-effects writing to Telegram
+        - Fire-and-forget → no 60s wait
+        - Clean systemEvent → Ron wakes up as if a heartbeat fired
+
+        The session_key is kept for logging only — cron wake always targets
+        the main session, which is exactly where the owner reads messages.
         """
-        logger.info("Delivering reply to owner session %s", session_key)
-        # Use timeout>0 so the gateway waits for the agent's reply and delivers it
-        # to the owner's channel (Telegram/WhatsApp). The agent's reply IS the
-        # delivery — gateway routes it automatically to the right channel.
-        reply = await self.inject_and_get_reply(
-            session_key=session_key,
-            message=message,
-            timeout_seconds=DELIVERY_TIMEOUT,
+        logger.info(
+            "Delivering reply to owner session %s via cron wake", session_key
         )
-        if reply:
+        ok = await self.cron_wake(message)
+        if ok:
             logger.info(
-                "Owner session %s replied (len=%d) — delivered via gateway",
-                session_key, len(reply)
+                "cron_wake delivered for session %s — agent will handle it on next turn",
+                session_key,
+            )
+        else:
+            logger.warning(
+                "cron_wake failed for session %s — message may be lost",
+                session_key,
             )
