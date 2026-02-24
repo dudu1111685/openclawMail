@@ -6,8 +6,8 @@ import httpx
 
 from .config import settings
 
-# Timeout for cron wake HTTP call (fire-and-forget, should be near-instant)
-CRON_WAKE_TIMEOUT = 5
+# Timeout for delivery HTTP call (fire-and-forget via timeoutSeconds=0)
+DELIVERY_HTTP_TIMEOUT = 10
 
 
 def _extract_reply(raw: str) -> str:
@@ -168,50 +168,6 @@ class OpenClawClient:
         return False
 
     # ------------------------------------------------------------------ #
-    #  cron wake — fire-and-forget systemEvent to the main session         #
-    # ------------------------------------------------------------------ #
-
-    async def cron_wake(self, text: str) -> bool:
-        """
-        Send a systemEvent to the main session via Gateway cron wake.
-
-        This is fire-and-forget: the gateway enqueues a systemEvent and triggers
-        an immediate heartbeat.  No announce step, no timeout, no side effects.
-
-        Returns True on success, False on any error.
-        """
-        body = {
-            "tool": "cron",
-            "args": {
-                "action": "wake",
-                "text": text,
-                "mode": "now",
-            },
-        }
-        try:
-            async with httpx.AsyncClient(timeout=CRON_WAKE_TIMEOUT) as client:
-                resp = await client.post(
-                    f"{self.gateway_url}/tools/invoke",
-                    json=body,
-                    headers=self._headers,
-                )
-                resp.raise_for_status()
-                result = resp.json()
-                ok = result.get("ok", False)
-                logger.info("cron_wake: ok=%s", ok)
-                return bool(ok)
-        except httpx.TimeoutException:
-            logger.warning("cron_wake: HTTP timeout after %ds", CRON_WAKE_TIMEOUT)
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                "cron_wake: HTTP %s: %s",
-                e.response.status_code, e.response.text,
-            )
-        except Exception:
-            logger.exception("cron_wake: unexpected error")
-        return False
-
-    # ------------------------------------------------------------------ #
     #  Deliver a "reply arrived" notification to the owner's session        #
     # ------------------------------------------------------------------ #
 
@@ -221,27 +177,44 @@ class OpenClawClient:
         message: str,
     ) -> None:
         """
-        Deliver an incoming agent message to the owner's active session.
+        Inject *message* into the owner's active session (e.g. Telegram thread).
 
-        Uses cron wake (systemEvent) instead of sessions_send, so:
-        - No announce step → no side-effects writing to Telegram
-        - Fire-and-forget → no 60s wait
-        - Clean systemEvent → Ron wakes up as if a heartbeat fired
-
-        The session_key is kept for logging only — cron wake always targets
-        the main session, which is exactly where the owner reads messages.
+        Uses sessions_send with timeoutSeconds=0 — true fire-and-forget:
+        - Gateway injects the message and returns immediately (no waiting for reply)
+        - No announce step → no side-effects writing to Telegram from remote gateway
+        - Delivers directly into the specific session_key (telegram topic etc.)
         """
-        logger.info(
-            "Delivering reply to owner session %s via cron wake", session_key
-        )
-        ok = await self.cron_wake(message)
-        if ok:
-            logger.info(
-                "cron_wake delivered for session %s — agent will handle it on next turn",
-                session_key,
-            )
-        else:
+        logger.info("Delivering reply to owner session %s (fire-and-forget)", session_key)
+        body = {
+            "tool": "sessions_send",
+            "args": {
+                "sessionKey": session_key,
+                "message": message,
+                "timeoutSeconds": 0,
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=DELIVERY_HTTP_TIMEOUT) as client:
+                resp = await client.post(
+                    f"{self.gateway_url}/tools/invoke",
+                    json=body,
+                    headers=self._headers,
+                )
+                resp.raise_for_status()
+                logger.info(
+                    "deliver_to_owner_session: injected into %s (status=%s)",
+                    session_key, resp.status_code,
+                )
+        except httpx.TimeoutException:
             logger.warning(
-                "cron_wake failed for session %s — message may be lost",
-                session_key,
+                "deliver_to_owner_session: HTTP timeout for session %s", session_key
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "deliver_to_owner_session: HTTP %s for session %s: %s",
+                e.response.status_code, session_key, e.response.text,
+            )
+        except Exception:
+            logger.exception(
+                "deliver_to_owner_session: unexpected error for session %s", session_key
             )
