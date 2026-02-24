@@ -248,10 +248,11 @@ class MailboxWSClient:
     # ------------------------------------------------------------------ #
 
     async def _send_heartbeat(self, ws) -> None:
+        # Send first ping immediately — Cloudflare drops idle connections after ~9s
         while self._running:
             try:
                 await ws.send(json.dumps({"type": "ping"}))
-                await asyncio.sleep(25)
+                await asyncio.sleep(5)  # every 5s — well within Cloudflare's idle timeout
             except Exception:
                 break
 
@@ -259,13 +260,24 @@ class MailboxWSClient:
         backoff = 1
         while self._running:
             try:
-                async with websockets.connect(self.ws_url) as ws:
+                async with websockets.connect(
+                    self.ws_url,
+                    ping_interval=5,   # WebSocket protocol-level PING every 5s
+                    ping_timeout=10,   # disconnect if no PONG within 10s
+                ) as ws:
                     await ws.send(json.dumps({
                         "type": "auth",
                         "api_key": settings.mailbox_api_key,
                     }))
                     logger.info("Connected to Mailbox Server WebSocket")
                     backoff = 1
+
+                    # Send an immediate ping right after auth — before heartbeat kicks in
+                    # This prevents Cloudflare from closing the connection on first auth
+                    try:
+                        await ws.send(json.dumps({"type": "ping"}))
+                    except Exception:
+                        pass
 
                     heartbeat_task = asyncio.create_task(self._send_heartbeat(ws))
                     try:

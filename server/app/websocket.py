@@ -10,6 +10,9 @@ class ConnectionManager:
     async def connect(self, agent_id: uuid.UUID, websocket: WebSocket) -> None:
         existing = self.active_connections.get(agent_id)
         if existing is not None:
+            # Remove first, then close — prevents the old coroutine's finally-disconnect
+            # from seeing itself as the active connection and removing the NEW socket.
+            del self.active_connections[agent_id]
             try:
                 await existing.close()
             except Exception:
