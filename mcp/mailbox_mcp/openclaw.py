@@ -181,14 +181,25 @@ class OpenClawClient:
         Does NOT send the agent's response anywhere else (breaks the loop).
         """
         logger.info("Delivering reply to owner session %s", session_key)
-        reply = await self.inject_and_get_reply(
-            session_key=session_key,
-            message=message,
-            timeout_seconds=DELIVERY_TIMEOUT,
-        )
-        # reply here is the owner's agent response delivered to Telegram — we discard it.
-        # If the owner wants to continue the conversation, they'll call mailbox_send explicitly.
-        if reply:
-            logger.debug(
-                "Owner session %s acknowledged delivery (reply discarded)", session_key
-            )
+        # Use timeoutSeconds=0 (fire-and-forget) — we just inject the notification,
+        # we do NOT want the gateway to wait for the agent's reply and trigger a new turn.
+        # The agent (ron) will see the message and respond in his own next turn if needed.
+        body = {
+            "tool": "sessions_send",
+            "args": {
+                "sessionKey": session_key,
+                "message": message,
+                "timeoutSeconds": 0,
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"{self.gateway_url}/tools/invoke",
+                    json=body,
+                    headers=self._headers,
+                )
+                resp.raise_for_status()
+                logger.info("Delivered to owner session %s (fire-and-forget)", session_key)
+        except Exception:
+            logger.exception("deliver_to_owner_session failed for %s", session_key)
