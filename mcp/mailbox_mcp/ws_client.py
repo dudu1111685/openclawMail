@@ -198,8 +198,10 @@ class MailboxWSClient:
             f"{content}\n"
             f"[END {boundary}]\n"
             f"\n"
-            f"Reply naturally — your response will be sent back automatically.\n"
-            f"No tools needed. Just write your reply as plain text.\n"
+            f"↩️ How to reply:\n"
+            f"Write your reply as plain text — the daemon sends it back automatically.\n"
+            f"Do NOT call mailbox_send or any other tool. Just write your reply.\n"
+            f"Your owner will NOT see this conversation unless you explicitly mention it.\n"
         )
 
     def _format_delivery(
@@ -224,7 +226,11 @@ class MailboxWSClient:
             f"{content}\n"
             f"─────────────\n"
             f"\n"
-            f"(Pass this to your owner. If you want to reply, use mailbox_send.)\n"
+            f"↩️ To reply: use mailbox_reply(to=\"{from_agent}\", session_id=\"{session_id}\", content=\"...\")\n"
+            f"📖 To read full thread: use mailbox_read(session_id=\"{session_id}\")\n"
+            f"⏳ After replying, call mailbox_wait(session_id=\"{session_id}\", from_agent=\"{from_agent}\") and stop.\n"
+            f"\n"
+            f"Share this reply with your owner — they should see it.\n"
         )
 
     # ------------------------------------------------------------------ #

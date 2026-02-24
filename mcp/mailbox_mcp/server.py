@@ -51,7 +51,13 @@ def create_server() -> Server:
             ),
             Tool(
                 name="mailbox_send",
-                description="Send a message to a connected agent.",
+                description=(
+                    "Send a message to a connected agent and wait for their reply.\n\n"
+                    "After calling this tool, DO NOT continue — stop and wait. "
+                    "The daemon will inject the reply into your session automatically.\n\n"
+                    "To continue an existing thread, pass session_id from a previous mailbox_send result.\n"
+                    "To start a new thread, omit session_id."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -61,7 +67,7 @@ def create_server() -> Server:
                         },
                         "subject": {
                             "type": "string",
-                            "description": "Subject of the conversation",
+                            "description": "Subject of the conversation (used for new threads; ignored if session_id is set)",
                         },
                         "content": {
                             "type": "string",
@@ -69,27 +75,86 @@ def create_server() -> Server:
                         },
                         "session_id": {
                             "type": "string",
-                            "description": "Optional existing session ID to continue a thread",
+                            "description": "Existing session ID to continue a thread. Omit to start a new thread.",
                         },
                         "reply_to_session_key": {
                             "type": "string",
-                            "description": "Optional OpenClaw session key on YOUR side. "
-                                           "When set, the recipient's replies will be injected "
-                                           "into that specific session (e.g. your current Telegram topic) "
-                                           "instead of their default dm:mailbox-{you} session. "
-                                           "Use this when you want the conversation to stay in context.",
+                            "description": (
+                                "Your current OpenClaw session key. When set, the recipient's reply "
+                                "will be injected directly into this session (e.g. your Telegram topic) "
+                                "instead of a background dm: session. Always set this when messaging "
+                                "from an active user conversation so the reply arrives in context."
+                            ),
                         },
                         "room": {
                             "type": "string",
-                            "description": "Optional room name (alphanumeric + _ -). "
-                                           "Like a WhatsApp group: all agents in the same room share "
-                                           "the same conversation context (dm:mailbox-room-{room}). "
-                                           "Use a room when you want persistent shared context across "
-                                           "multiple conversations with the same agent or group. "
-                                           "Without a room, each message thread is fully isolated.",
+                            "description": (
+                                "Optional room name (alphanumeric + _ -). Like a WhatsApp group: "
+                                "all agents in the same room share conversation context. "
+                                "Without a room, each thread is fully isolated."
+                            ),
                         },
                     },
                     "required": ["to", "content"],
+                },
+            ),
+            Tool(
+                name="mailbox_reply",
+                description=(
+                    "Reply to an agent in an existing thread. "
+                    "Use this after receiving a message — it automatically continues the correct thread.\n\n"
+                    "After calling this tool, DO NOT continue — stop and wait. "
+                    "The daemon will inject the reply into your session automatically."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "to": {
+                            "type": "string",
+                            "description": "Name of the agent to reply to",
+                        },
+                        "session_id": {
+                            "type": "string",
+                            "description": "The session ID of the thread you're replying to (from the incoming message header)",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Your reply content",
+                        },
+                        "reply_to_session_key": {
+                            "type": "string",
+                            "description": (
+                                "Your current OpenClaw session key — copy from the incoming message header. "
+                                "Ensures the reply from the other agent comes back to the right session."
+                            ),
+                        },
+                    },
+                    "required": ["to", "session_id", "content"],
+                },
+            ),
+            Tool(
+                name="mailbox_wait",
+                description=(
+                    "Signal that you are waiting for a reply from an agent. "
+                    "Call this after mailbox_send when you want to make it explicit that "
+                    "you are pausing and expecting an inbound message.\n\n"
+                    "This tool does nothing on the network — the daemon is already listening. "
+                    "It exists purely to anchor your turn: after calling it, stop and do not continue "
+                    "until the daemon injects the reply into your session."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "session_id": {
+                            "type": "string",
+                            "description": "The session ID you are waiting on",
+                        },
+                        "from_agent": {
+                            "type": "string",
+                            "description": "Name of the agent whose reply you are waiting for",
+                        },
+                    },
+                    "required": ["session_id", "from_agent"],
                 },
             ),
             Tool(
@@ -119,6 +184,10 @@ def create_server() -> Server:
                 return await _handle_approve(arguments)
             elif name == "mailbox_send":
                 return await _handle_send(arguments)
+            elif name == "mailbox_reply":
+                return await _handle_reply(arguments)
+            elif name == "mailbox_wait":
+                return await _handle_wait(arguments)
             elif name == "mailbox_read":
                 return await _handle_read(arguments)
             else:
@@ -196,11 +265,48 @@ async def _handle_send(arguments: dict) -> list[TextContent]:
         reply_to_session_key=arguments.get("reply_to_session_key"),
         room=arguments.get("room"),
     )
-    room_info = f"\nRoom: #{result['room']}" if result.get("room") else ""
+    room_info = f"\nRoom   : #{result['room']}" if result.get("room") else ""
     text = (
-        f"Message sent!\n"
-        f"Session: {result['subject']} (ID: {result['session_id']}){room_info}\n"
-        f"Message ID: {result['message_id']}"
+        f"✉️ Message sent.\n"
+        f"To      : {arguments['to']}\n"
+        f"Session : {result['subject']} (ID: {result['session_id']}){room_info}\n"
+        f"Msg ID  : {result['message_id']}\n"
+        f"\n"
+        f"⏳ Waiting for reply — the daemon will inject it into your session automatically.\n"
+        f"Do NOT poll mailbox_check. Just stop here and wait."
+    )
+    return [TextContent(type="text", text=text)]
+
+
+async def _handle_reply(arguments: dict) -> list[TextContent]:
+    """Convenience wrapper — reply to an existing thread."""
+    result = await mailbox.send_message(
+        to=arguments["to"],
+        content=arguments["content"],
+        session_id=arguments["session_id"],
+        reply_to_session_key=arguments.get("reply_to_session_key"),
+    )
+    text = (
+        f"↩️ Reply sent.\n"
+        f"To      : {arguments['to']}\n"
+        f"Session : {result['session_id']}\n"
+        f"Msg ID  : {result['message_id']}\n"
+        f"\n"
+        f"⏳ Waiting for reply — the daemon will inject it into your session automatically.\n"
+        f"Do NOT poll mailbox_check. Just stop here and wait."
+    )
+    return [TextContent(type="text", text=text)]
+
+
+async def _handle_wait(arguments: dict) -> list[TextContent]:
+    """Semantic anchor — tells the agent to stop and wait. Does nothing on the network."""
+    session_id = arguments["session_id"]
+    from_agent = arguments["from_agent"]
+    text = (
+        f"⏳ Waiting for reply from {from_agent} on session {session_id}.\n"
+        f"\n"
+        f"The daemon is listening. When the reply arrives it will be injected into your session.\n"
+        f"Stop here — do not call any other tools or continue your response."
     )
     return [TextContent(type="text", text=text)]
 
