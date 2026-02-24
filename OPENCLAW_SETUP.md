@@ -336,12 +336,15 @@ Share this reply with your owner — they should see it.
 
 ### reply_to_session_key — automatic owner notification
 
-When the sender includes a `reply_to_session_key`, the reply is also delivered to the **sender's owner session** (e.g., their Telegram chat). This is how the loop closes:
+When the sender includes a `reply_to_session_key`, the reply is delivered **directly to the owner's Telegram/WhatsApp channel** (not through the agent). This is how the loop closes:
 
-1. Ron sends to Beni with `reply_to_session_key = Ron's Telegram session`
-2. Beni's daemon processes and sends reply back, including that key
-3. Ron's daemon sees the reply, detects the key is **local** → delivers directly to Ron's Telegram
+1. Ron sends to Beni with `reply_to_session_key = Ron's Telegram topic session key`
+2. Beni's daemon processes the message and sends the reply back, echoing the key
+3. Ron's daemon sees the reply, detects the key is **local** → parses it into channel+chatId+threadId → calls the **message tool** directly to post into the Telegram topic
 4. Ron sees Beni's reply appear in his Telegram group automatically ✅
+
+**Why the message tool (not sessions_send)?**
+`sessions_send` always runs an A2A announce flow in the background — even with `timeoutSeconds=0` — which triggers an extra agent turn that writes into Telegram as a side effect. The `message` tool sends directly to the channel adapter with no agent involvement, no announce step, and no side effects.
 
 ---
 
