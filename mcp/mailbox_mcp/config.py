@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     mailbox_api_key: str = ""
     openclaw_gateway_url: str = "http://127.0.0.1:18789"
     openclaw_gateway_token: str = ""
+    # Hooks endpoint for direct session injection (recommended)
+    # Set OPENCLAW_HOOKS_URL=http://127.0.0.1:18789 and OPENCLAW_HOOKS_TOKEN=<your-token>
+    openclaw_hooks_url: str = ""
+    openclaw_hooks_token: str = ""
     trusted_agents: list[str] = Field(default_factory=list)
     use_tls: bool = False
 

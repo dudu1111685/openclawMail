@@ -168,6 +168,41 @@ class OpenClawClient:
         return False
 
     # ------------------------------------------------------------------ #
+    #  Parse session_key → cron delivery target string                     #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _session_key_to_cron_target(session_key: str) -> str | None:
+        """
+        Convert a session key to a cron delivery 'to' string.
+
+        agent:main:telegram:group:-1003847194980:topic:3957
+          → "-1003847194980:topic:3957"
+
+        agent:main:telegram:group:-1003847194980
+          → "-1003847194980"
+
+        Returns None if not a recognizable telegram session.
+        """
+        parts = session_key.split(":")
+        if len(parts) < 5 or parts[2] != "telegram":
+            return None
+        # find group/dm and chat_id
+        for i, p in enumerate(parts):
+            if p in ("group", "dm") and i + 1 < len(parts):
+                chat_id = parts[i + 1]
+                # check for topic
+                topic_idx = None
+                for j in range(i + 2, len(parts) - 1):
+                    if parts[j] == "topic":
+                        topic_idx = j
+                        break
+                if topic_idx is not None:
+                    return f"{chat_id}:topic:{parts[topic_idx + 1]}"
+                return chat_id
+        return None
+
+    # ------------------------------------------------------------------ #
     #  Parse session_key → channel delivery params                         #
     # ------------------------------------------------------------------ #
 
@@ -219,66 +254,59 @@ class OpenClawClient:
         message: str,
     ) -> None:
         """
-        Deliver *message* directly to the owner's channel (Telegram topic etc.)
-        using the message tool — bypasses sessions_send entirely.
+        Deliver *message* directly into the owner's active session as a systemEvent.
 
-        Why message tool instead of sessions_send:
-        - sessions_send always runs an A2A announce flow (even with timeoutSeconds=0)
-          which triggers an agent turn in the session → writes to Telegram as side-effect
-        - message tool sends directly to the channel with no agent turn involved
-        - Zero announce step, zero side effects, fire-and-forget
+        Uses POST /hooks/wake with sessionKey — this enqueues a systemEvent into
+        the exact session (e.g. telegram topic:3957) and triggers an immediate
+        heartbeat.  The agent wakes up in *that* session and handles the message
+        in context, with no announce steps and no side effects.
 
-        Falls back to sessions_send(timeoutSeconds=0) for non-telegram sessions.
+        Requires OpenClaw config:
+            hooks.enabled = true
+            hooks.token   = <OPENCLAW_HOOKS_TOKEN>
+            hooks.allowRequestSessionKey = true
+            hooks.allowedSessionKeyPrefixes = ["agent:main:telegram:"]
+
+        Falls back to sessions_send(timeoutSeconds=0) if hooks are not configured.
         """
-        logger.info("Delivering reply to owner session %s via message tool", session_key)
+        logger.info("Delivering to owner session %s via /hooks/wake", session_key)
 
-        parsed = self._parse_session_key(session_key)
-        if parsed:
-            # Direct channel delivery — no agent turn, no announce step
-            args: dict = {
-                "action": "send",
-                "channel": parsed["channel"],
-                "target": parsed["target"],
-                "message": message,
-            }
-            if "thread_id" in parsed:
-                args["threadId"] = parsed["thread_id"]
+        hooks_url = getattr(settings, "openclaw_hooks_url", "").rstrip("/")
+        hooks_token = getattr(settings, "openclaw_hooks_token", "")
 
-            body = {"tool": "message", "args": args}
+        if hooks_url and hooks_token:
+            body = {"text": message, "mode": "now", "sessionKey": session_key}
             try:
                 async with httpx.AsyncClient(timeout=DELIVERY_HTTP_TIMEOUT) as client:
                     resp = await client.post(
-                        f"{self.gateway_url}/tools/invoke",
+                        f"{hooks_url}/hooks/wake",
                         json=body,
-                        headers=self._headers,
+                        headers={"Authorization": f"Bearer {hooks_token}"},
                     )
                     resp.raise_for_status()
-                    result = resp.json()
                     logger.info(
-                        "deliver_to_owner_session: message tool OK for %s (messageId=%s)",
-                        session_key,
-                        result.get("result", {}).get("details", {}).get("messageId"),
+                        "deliver_to_owner_session: /hooks/wake OK for %s", session_key
                     )
                     return
             except httpx.TimeoutException:
                 logger.warning(
-                    "deliver_to_owner_session: message tool HTTP timeout for %s", session_key
+                    "deliver_to_owner_session: /hooks/wake timeout for %s", session_key
                 )
             except httpx.HTTPStatusError as e:
                 logger.error(
-                    "deliver_to_owner_session: message tool HTTP %s for %s: %s",
+                    "deliver_to_owner_session: /hooks/wake HTTP %s for %s: %s",
                     e.response.status_code, session_key, e.response.text,
                 )
             except Exception:
                 logger.exception(
-                    "deliver_to_owner_session: message tool unexpected error for %s", session_key
+                    "deliver_to_owner_session: /hooks/wake error for %s", session_key
                 )
-            return  # don't fallback — avoid double-delivery attempts
+            # fall through to fallback
 
-        # Fallback: non-telegram session — use sessions_send fire-and-forget
+        # Fallback: sessions_send fire-and-forget (has A2A announce side effects,
+        # but better than losing the message entirely)
         logger.info(
-            "deliver_to_owner_session: no channel parse for %s — falling back to sessions_send",
-            session_key,
+            "deliver_to_owner_session: falling back to sessions_send for %s", session_key
         )
         body_fallback = {
             "tool": "sessions_send",
