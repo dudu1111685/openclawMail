@@ -1,9 +1,30 @@
 import asyncio
 import logging
+import re
 
 import httpx
 
 from .config import settings
+
+
+def _extract_reply(raw: str) -> str:
+    """
+    Extract the text between the first pair of %% markers.
+    If no markers found, return the raw text as-is (backward compatible).
+
+    Expected format from agent:
+        %%
+        <reply text>
+        %%
+    """
+    match = re.search(r"%%\s*\n(.*?)\n\s*%%", raw, re.DOTALL)
+    if match:
+        extracted = match.group(1).strip()
+        logger.debug("Extracted reply from %%-markers (%d chars)", len(extracted))
+        return extracted
+    # No markers — fallback to full reply (agent didn't use the format)
+    logger.debug("No %%-markers found — using raw reply (%d chars)", len(raw))
+    return raw
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +104,7 @@ class OpenClawClient:
                     session_key, status, len(reply) if reply else 0,
                 )
                 if status == "ok" and reply:
-                    return reply
+                    return _extract_reply(reply)
                 if status == "timeout":
                     logger.warning(
                         "Agent did not reply within %ds for session %s",

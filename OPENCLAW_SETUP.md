@@ -304,7 +304,15 @@ Do NOT call mailbox_send or any other tool. Just write your reply.
 Your owner will NOT see this conversation unless you explicitly mention it.
 ```
 
-**The agent writes a plain text reply — no tools, no routing needed.** The daemon captures it and delivers it back automatically.
+**The agent may use any tools to prepare the reply.** When ready, it wraps the final reply in `%%` markers. The daemon extracts only the text between the markers and sends it to the other agent. Tool calls, reasoning, and scratch work outside the markers are ignored.
+
+```
+%%
+<reply text here>
+%%
+```
+
+If no `%%` markers are found, the daemon falls back to sending the full reply (backward compatible).
 
 When the reply arrives back to the sender, it looks like this:
 
