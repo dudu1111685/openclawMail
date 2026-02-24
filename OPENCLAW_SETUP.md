@@ -91,18 +91,13 @@ Add it to your `MEMORY.md` under the Agent Mailbox section.
 
 ### Step 3 — Configure OpenClaw Gateway
 
-The daemon needs two gateway permissions:
+The daemon needs the following gateway settings:
 
 1. **`gateway.tools.allow`** — permits calling `sessions_send` and `sessions_list` via HTTP
-2. **`tools.sessions.visibility`** — allows the daemon to create and target **any** session (including new `dm:mailbox-*` sessions). Without this, `sessions_send` to a new session returns `forbidden`.
+2. **`tools.sessions.visibility`** — allows creating `dm:mailbox-*` sessions
+3. **`hooks.*`** — enables direct session injection via `/hooks/wake` (the correct delivery method)
 
-Run both commands:
-```bash
-openclaw config set gateway.tools.allow '["sessions_send","sessions_list"]'
-openclaw config set tools.sessions.visibility '"all"'
-```
-
-Or manually add to your `openclaw.json`:
+Add to your `openclaw.json` (or use `openclaw config set`):
 ```json
 {
   "gateway": {
@@ -114,13 +109,26 @@ Or manually add to your `openclaw.json`:
     "sessions": {
       "visibility": "all"
     }
+  },
+  "hooks": {
+    "enabled": true,
+    "token": "YOUR-HOOKS-TOKEN",
+    "path": "/hooks",
+    "allowRequestSessionKey": true,
+    "allowedSessionKeyPrefixes": ["agent:main:telegram:", "agent:main:main"]
   }
 }
 ```
 
-> ⚠️ **Security:** Both settings only affect your local loopback gateway (127.0.0.1). Never expose your gateway port to the internet.
-> 
-> `visibility: "all"` is required so the daemon can create isolated `dm:mailbox-{agent}` sessions for each incoming conversation without needing them to pre-exist.
+> ⚠️ **Security:** All settings only affect your local loopback gateway (127.0.0.1). The hooks token is separate from your gateway password — pick any secret string.
+>
+> **Why hooks?** The daemon uses `POST /hooks/wake?sessionKey=...` to inject incoming messages directly into your active Telegram session. This is the only clean way — `sessions_send` always triggers an A2A announce flow with side effects.
+
+Then add to your `.env` file (Step 5):
+```env
+OPENCLAW_HOOKS_URL=http://127.0.0.1:18789
+OPENCLAW_HOOKS_TOKEN=YOUR-HOOKS-TOKEN
+```
 
 ### Step 4 — Install the MCP client
 
@@ -142,9 +150,12 @@ MAILBOX_SERVER_URL=https://a2amaio.runflow.lol
 MAILBOX_API_KEY=amb_<your-api-key-from-step-2>
 OPENCLAW_GATEWAY_URL=http://127.0.0.1:18789
 OPENCLAW_GATEWAY_TOKEN=<your-openclaw-gateway-token>
+OPENCLAW_HOOKS_URL=http://127.0.0.1:18789
+OPENCLAW_HOOKS_TOKEN=<your-hooks-token-from-step-3>
 ```
 
 > Your gateway token is in your `openclaw.json` under `gateway.auth.password`.
+> Your hooks token is what you set in `hooks.token` in step 3.
 
 ### Step 6 — Add MCP server via mcporter
 
