@@ -254,57 +254,66 @@ class OpenClawClient:
         message: str,
     ) -> None:
         """
-        Deliver *message* directly into the owner's active session as a systemEvent.
+        Deliver *message* into the owner's active session via POST /v1/chat/completions.
 
-        Uses POST /hooks/wake with sessionKey — this enqueues a systemEvent into
-        the exact session (e.g. telegram topic:3957) and triggers an immediate
-        heartbeat.  The agent wakes up in *that* session and handles the message
-        in context, with no announce steps and no side effects.
+        Uses the OpenAI-compatible endpoint with x-openclaw-session-key header to
+        inject the message directly into the exact session (e.g. telegram topic:3957).
+        The agent wakes up in that session, processes the message naturally, and
+        replies — all within the correct session context.
 
-        Requires OpenClaw config:
-            hooks.enabled = true
-            hooks.token   = <OPENCLAW_HOOKS_TOKEN>
-            hooks.allowRequestSessionKey = true
-            hooks.allowedSessionKeyPrefixes = ["agent:main:telegram:"]
+        No announce step, no side effects, no isolated sessions.
+        The gateway routes the reply back to Telegram automatically.
 
-        Falls back to sessions_send(timeoutSeconds=0) if hooks are not configured.
+        Falls back to sessions_send(timeoutSeconds=0) on error.
         """
-        logger.info("Delivering to owner session %s via /hooks/wake", session_key)
+        logger.info(
+            "Delivering to owner session %s via /v1/chat/completions", session_key
+        )
 
-        hooks_url = getattr(settings, "openclaw_hooks_url", "").rstrip("/")
-        hooks_token = getattr(settings, "openclaw_hooks_token", "")
+        body = {
+            "model": "openclaw",
+            "messages": [{"role": "user", "content": message}],
+        }
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+            "x-openclaw-session-key": session_key,
+        }
+        try:
+            # Long timeout — agent needs time to think and respond
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(
+                    f"{self.gateway_url}/v1/chat/completions",
+                    json=body,
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                result = resp.json()
+                reply = (
+                    result.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                )
+                logger.info(
+                    "deliver_to_owner_session: chat/completions OK for %s (reply_len=%d)",
+                    session_key, len(reply),
+                )
+                return
+        except httpx.TimeoutException:
+            logger.warning(
+                "deliver_to_owner_session: chat/completions timeout for %s", session_key
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "deliver_to_owner_session: chat/completions HTTP %s for %s: %s",
+                e.response.status_code, session_key, e.response.text,
+            )
+        except Exception:
+            logger.exception(
+                "deliver_to_owner_session: chat/completions error for %s", session_key
+            )
 
-        if hooks_url and hooks_token:
-            body = {"text": message, "mode": "now", "sessionKey": session_key}
-            try:
-                async with httpx.AsyncClient(timeout=DELIVERY_HTTP_TIMEOUT) as client:
-                    resp = await client.post(
-                        f"{hooks_url}/hooks/wake",
-                        json=body,
-                        headers={"Authorization": f"Bearer {hooks_token}"},
-                    )
-                    resp.raise_for_status()
-                    logger.info(
-                        "deliver_to_owner_session: /hooks/wake OK for %s", session_key
-                    )
-                    return
-            except httpx.TimeoutException:
-                logger.warning(
-                    "deliver_to_owner_session: /hooks/wake timeout for %s", session_key
-                )
-            except httpx.HTTPStatusError as e:
-                logger.error(
-                    "deliver_to_owner_session: /hooks/wake HTTP %s for %s: %s",
-                    e.response.status_code, session_key, e.response.text,
-                )
-            except Exception:
-                logger.exception(
-                    "deliver_to_owner_session: /hooks/wake error for %s", session_key
-                )
-            # fall through to fallback
-
-        # Fallback: sessions_send fire-and-forget (has A2A announce side effects,
-        # but better than losing the message entirely)
+        # Fallback: sessions_send fire-and-forget
         logger.info(
             "deliver_to_owner_session: falling back to sessions_send for %s", session_key
         )
