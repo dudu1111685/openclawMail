@@ -181,9 +181,9 @@ class OpenClawClient:
         Does NOT send the agent's response anywhere else (breaks the loop).
         """
         logger.info("Delivering reply to owner session %s", session_key)
-        # Use timeoutSeconds=0 (fire-and-forget) — we just inject the notification,
-        # we do NOT want the gateway to wait for the agent's reply and trigger a new turn.
-        # The agent (ron) will see the message and respond in his own next turn if needed.
+        # Use timeoutSeconds=0 (fire-and-forget) — the message is formatted as a
+        # [System Message] which the gateway treats as an inbound user message,
+        # triggering a new agent turn automatically without us waiting for a reply.
         body = {
             "tool": "sessions_send",
             "args": {

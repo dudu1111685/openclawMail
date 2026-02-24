@@ -224,23 +224,25 @@ class MailboxWSClient:
         """
         Format the notification injected into the owner's active session
         when a reply arrives back from a remote agent.
+
+        Formatted as a [System Message] so the gateway treats it as an inbound
+        user message and triggers a new agent turn automatically.
         """
+        trust_level = self._get_trust_level(from_agent)
+        trust_label = "TRUSTED" if trust_level == "trusted" else "UNKNOWN"
+
         return (
-            f"[AGENT MAILBOX — REPLY RECEIVED]\n"
-            f"\n"
-            f"📬 {from_agent} replied to your message.\n"
+            f"[System Message — Agent Mailbox]\n"
+            f"From    : {from_agent} ({trust_label} agent)\n"
             f"Subject : {subject or '(none)'}\n"
             f"Thread  : {session_id}\n"
             f"\n"
-            f"─── Reply ───\n"
+            f"─── Message ───\n"
             f"{content}\n"
-            f"─────────────\n"
+            f"───────────────\n"
             f"\n"
-            f"↩️ To reply: use mailbox_reply(to=\"{from_agent}\", session_id=\"{session_id}\", content=\"...\")\n"
-            f"📖 To read full thread: use mailbox_read(session_id=\"{session_id}\")\n"
-            f"⏳ After replying, call mailbox_wait(session_id=\"{session_id}\", from_agent=\"{from_agent}\") and stop.\n"
-            f"\n"
-            f"Share this reply with your owner — they should see it.\n"
+            f"Present this message to your owner (שלמה) in the current chat.\n"
+            f"To reply: mailbox_reply(to=\"{from_agent}\", session_id=\"{session_id}\", content=\"...\")\n"
         )
 
     # ------------------------------------------------------------------ #
